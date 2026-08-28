@@ -20,8 +20,17 @@ const MIME = {
   '.ico': 'image/x-icon'
 };
 
+function cacheHeader(ext) {
+  if (ext === '.html' || ext === '.css' || ext === '.js' || ext === '.json') return 'no-cache, no-store, must-revalidate';
+  return 'public, max-age=604800, immutable';
+}
+
 function send(res, status, body, headers = {}) {
-  res.writeHead(status, { 'Cache-Control': 'no-cache', ...headers });
+  res.writeHead(status, {
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    ...headers
+  });
   res.end(body);
 }
 
@@ -29,14 +38,14 @@ async function instagramHandler(res) {
   const accessToken = process.env.IG_ACCESS_TOKEN;
   const userId = process.env.IG_USER_ID;
   const graphVersion = process.env.IG_GRAPH_VERSION || 'v23.0';
-  if (!accessToken || !userId) return send(res, 204, '');
+  if (!accessToken || !userId) return send(res, 204, '', { 'Cache-Control': 'no-store' });
 
   try {
     const fields = 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp';
     const endpoint = `https://graph.facebook.com/${graphVersion}/${userId}/media?fields=${fields}&limit=8&access_token=${encodeURIComponent(accessToken)}`;
     const response = await fetch(endpoint, { headers: { Accept: 'application/json' } });
     const payload = await response.json();
-    if (!response.ok) return send(res, 502, JSON.stringify({ error: 'instagram_unavailable' }), { 'Content-Type': MIME['.json'] });
+    if (!response.ok) return send(res, 502, JSON.stringify({ error: 'instagram_unavailable' }), { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
     const posts = (payload.data || []).map(post => ({
       id: post.id,
       caption: post.caption || '',
@@ -48,37 +57,51 @@ async function instagramHandler(res) {
     return send(res, 200, JSON.stringify({ source: 'live', posts }), { 'Content-Type': MIME['.json'], 'Cache-Control': 'public, max-age=300' });
   } catch (error) {
     console.error(error);
-    return send(res, 502, JSON.stringify({ error: 'instagram_unavailable' }), { 'Content-Type': MIME['.json'] });
+    return send(res, 502, JSON.stringify({ error: 'instagram_unavailable' }), { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
   }
 }
 
-function safePathname(pathname) {
-  const decoded = decodeURIComponent(pathname).replace(/\\/g, '/');
-  const clean = path.normalize(decoded).replace(/^(\.\.(\/|\\|$))+/, '');
-  return clean;
+function normalizePathname(pathname) {
+  try {
+    return decodeURIComponent(pathname).replace(/\\/g, '/');
+  } catch {
+    return pathname.replace(/\\/g, '/');
+  }
+}
+
+function serveFile(reqPath, res) {
+  const relative = reqPath.replace(/^\/+/, '');
+  const normalized = path.normalize(relative);
+  if (normalized.startsWith('..') || path.isAbsolute(normalized)) {
+    return send(res, 403, 'Forbidden', { 'Cache-Control': 'no-store' });
+  }
+
+  const filePath = path.join(PUBLIC_DIR, normalized);
+  fs.stat(filePath, (err, stat) => {
+    if (err || !stat.isFile()) return send(res, 404, 'Not found', { 'Cache-Control': 'no-store' });
+    fs.readFile(filePath, (readErr, data) => {
+      if (readErr) return send(res, 500, 'Erro ao carregar o site.', { 'Cache-Control': 'no-store' });
+      const ext = path.extname(filePath).toLowerCase();
+      send(res, 200, data, {
+        'Content-Type': MIME[ext] || 'application/octet-stream',
+        'Cache-Control': cacheHeader(ext)
+      });
+    });
+  });
 }
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  if (url.pathname === '/health') return send(res, 200, 'ok', { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
   if (url.pathname === '/api/instagram') return instagramHandler(res);
 
-  let pathname = safePathname(url.pathname);
+  let pathname = normalizePathname(url.pathname);
   if (pathname === '/' || pathname === '') pathname = '/index.html';
-  if (!path.extname(pathname)) pathname += '.html';
 
-  let filePath = path.join(PUBLIC_DIR, pathname);
-  if (!filePath.startsWith(PUBLIC_DIR)) return send(res, 403, 'Forbidden');
+  // URLs amigáveis, sem quebrar arquivos estáticos.
+  if (!path.extname(pathname)) pathname = `${pathname.replace(/\/$/, '')}.html`;
 
-  fs.stat(filePath, (err, stat) => {
-    if (err || !stat.isFile()) {
-      filePath = path.join(PUBLIC_DIR, 'index.html');
-    }
-    fs.readFile(filePath, (readErr, data) => {
-      if (readErr) return send(res, 500, 'Erro ao carregar o site.');
-      const ext = path.extname(filePath).toLowerCase();
-      send(res, 200, data, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=86400' });
-    });
-  });
+  serveFile(pathname, res);
 });
 
 server.listen(PORT, '0.0.0.0', () => {

@@ -35,3 +35,9 @@ Substituir/adicionar, quando o cliente fornecer:
 - capacidade e estrutura detalhada;
 - regras/pacotes/serviços;
 - dados corretos da conta Meta para o feed do Instagram.
+
+## Atualização de compatibilidade (v2)
+- CSS principal também embutido nas páginas como fallback, evitando página sem estilo em navegadores/dispositivos que falham ao buscar o CSS externo.
+- CSS/JS com cache desativado no servidor para evitar versão antiga após novo deploy.
+- Servidor agora retorna 404 real para assets inexistentes, em vez de entregar HTML no lugar de CSS/JS.
+- Fallback para navegadores sem IntersectionObserver e para bloqueio de sessionStorage.

@@ -32,26 +32,31 @@ if (intro) {
     body.classList.remove('is-locked');
     setTimeout(() => intro.remove(), 900);
   };
-  const seenThisSession = sessionStorage.getItem('sitio-intro-seen');
+  let seenThisSession = false;
+  try { seenThisSession = sessionStorage.getItem('sitio-intro-seen'); } catch (_) {}
   if (seenThisSession) {
     closeIntro();
   } else {
-    sessionStorage.setItem('sitio-intro-seen', '1');
+    try { sessionStorage.setItem('sitio-intro-seen', '1'); } catch (_) {}
     setTimeout(closeIntro, 3000);
     intro.addEventListener('click', closeIntro, { once: true });
   }
 }
 
 // Animações de entrada conforme o scroll.
-const revealObserver = new IntersectionObserver((entries) => {
-  entries.forEach((entry) => {
-    if (entry.isIntersecting) {
-      entry.target.classList.add('visible');
-      revealObserver.unobserve(entry.target);
-    }
-  });
-}, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
-$$('.reveal').forEach((el) => revealObserver.observe(el));
+if ('IntersectionObserver' in window) {
+  const revealObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        revealObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
+  $$('.reveal').forEach((el) => revealObserver.observe(el));
+} else {
+  $$('.reveal').forEach((el) => el.classList.add('visible'));
+}
 
 function sanitizeCaption(text = '') {
   return text.replace(/\s+/g, ' ').trim().slice(0, 180);
@@ -63,7 +68,7 @@ async function loadInstagram() {
 
   let items = [];
   try {
-    const liveResponse = await fetch('api/instagram');
+    const liveResponse = await fetch('/api/instagram');
     if (liveResponse.ok && liveResponse.status !== 204) {
       const payload = await liveResponse.json();
       if (Array.isArray(payload.posts) && payload.posts.length) {

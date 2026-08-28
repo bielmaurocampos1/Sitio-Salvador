@@ -271,3 +271,17 @@ button,input,textarea,select{font:inherit}
 @media (prefers-reduced-motion:reduce){
   *{animation:none!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
+
+/* Robustez entre navegadores/dispositivos */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{min-width:280px}
+img{height:auto}
+@supports not (height:100svh){.hero{min-height:100vh}}
+@media (max-width:420px){
+  .container{width:min(calc(100% - 22px),var(--max))}
+  .hero h1{font-size:clamp(3rem,17vw,4.6rem)}
+  .hero-content{padding-top:118px}
+  .section{padding:68px 0}
+  .section.compact{padding:54px 0}
+  .cta-content h2{font-size:clamp(2.7rem,14vw,4.2rem)}
+}
